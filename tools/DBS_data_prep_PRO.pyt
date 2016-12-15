@@ -371,19 +371,38 @@ class ReplaceZeroValues(object):
         field_names = [f.name for f in flds]
         f_arr = arcpy.da.FeatureClassToNumPyArray(fc_copy, ['SHAPE@XY'] + field_names)
 
-        if rep == 'mean':
+        if rep.lower() == 'mean':
             for i,field in enumerate(field_names):
-                if flds[i].type == "DOUBLE":
-                    mean_rep = np.nanmean(arr)                    
+                if flds[i].type.upper() == "DOUBLE":
+                    arcpy.AddMessage('processing field: {}'.format(field))
+                    arr = f_arr[field].copy()
+                    mean_rep = np.nanmean(arr[arr!=0])                 
                     f_arr[field][f_arr[field] == 0] = mean_rep
-                    f_arr[field][np.isnan(f_arr[field])] = mean_rep 
+                    f_arr[field][np.isnan(f_arr[field])] = mean_rep
 
-        if rep == 'median':
+                    num_nan_rep = len(arr[np.isnan(arr)]) - len(f_arr[field][np.isnan(f_arr[field])])
+                    num_zero_rep = len(arr[arr==0]) - len(f_arr[field][f_arr[field] == 0])
+                    
+                    arcpy.AddMessage("replaced {} zero values".format(num_zero_rep))
+                    arcpy.AddMessage("replaced {} NaN values".format(num_nan_rep))
+
+        if rep.lower() == 'median':
             for i,field in enumerate(field_names):
-                if flds[i].type == "DOUBLE":
-                    median_rep = np.nanmedian(f_arr[field])
+                if flds[i].type.upper() == "DOUBLE":
+                    arcpy.AddMessage('processing field: {}'.format(field))
+                    
+                    arr = f_arr[field].copy()
+                    median_rep = np.nanmedian(arr[arr!=0])
                     f_arr[field][f_arr[field] == 0] = median_rep
                     f_arr[field][np.isnan(f_arr[field])] = median_rep
+                    
+                    num_nan_rep = len(arr[np.isnan(arr)]) - len(f_arr[field][np.isnan(f_arr[field])])
+                    num_zero_rep = len(arr[arr==0]) - len(f_arr[field][f_arr[field] == 0])
+                    
+                    arcpy.AddMessage("replaced {} zero values".format(num_zero_rep))
+                    arcpy.AddMessage("replaced {} NaN values".format(num_nan_rep))
+                    
+                    
 
         arcpy.da.NumPyArrayToFeatureClass(f_arr, out_fc, ['SHAPE@XY'], sr)
 
