@@ -5,10 +5,13 @@ import traceback
 import arcgisscripting
 
 arcpy.env.overwriteOutput = True
-
 arcpy.CheckOutExtension('spatial')
 
-
+if arcpy.GetInstallInfo()['ProductName'] == 'ArcGISPro':
+    platform = "PRO"
+else:
+    platform = "DESKTOP"
+    
 class Toolbox(object):
     def __init__(self):
         """Define the toolbox (the name of the toolbox is the name of the
@@ -34,11 +37,14 @@ class GenerateSamplePointsFromTruthPoly(object):
             # print('Domain name: {0}'.format(domain.name))
             # if domain.domainType == 'CodedValue':
             coded_values = domain.codedValues
-            for val, desc in coded_values.iteritems(): #uncomment for py 2.7
-            # for val, desc in coded_values.items():
-                
-                pairs.append((val, desc))
-                vals.append(val)
+            if platform == "DESKTOP": # we are using ArcGIS Desktop
+                for val, desc in coded_values.iteritems(): #uncomment for py 2.7
+                    pairs.append((val, desc))
+                    vals.append(val)
+            else: # we are using ArcGIS Pro
+                for val, desc in coded_values.items():
+                    pairs.append((val, desc))
+                    vals.append(val)
 
         vals.sort()
         
