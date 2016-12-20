@@ -84,14 +84,14 @@ class GenerateSamplePointsFromTruthPoly(object):
             direction ='Input')
             
         param3 = arcpy.Parameter(
-            displayName ='number of sample points',
+            displayName ='Number of Sample Points',
             name ='in_numpts',
             datatype ="GPLong",
             parameterType ='Required',
             direction ='Input')
             
         param4 = arcpy.Parameter(
-            displayName ='sampling type',
+            displayName ='Sampling Type',
             name ='in_sampl_type',
             datatype ="GPString",
             parameterType ='Required',
@@ -101,12 +101,12 @@ class GenerateSamplePointsFromTruthPoly(object):
             
             
         param5 = arcpy.Parameter(
-            displayName = 'output geodatabase',
+            displayName = 'Output Geodatabase',
             name = 'out_gdb',
-            datatype = "GPString",
+            datatype = "DEWorkspace",
             parameterType = 'Required',
-            direction = 'Output')
-
+            direction = 'Input')
+        
         params = [param0, param1, param2, param3, param4, param5]
         return params
 
