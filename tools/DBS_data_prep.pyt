@@ -25,30 +25,35 @@ class Toolbox(object):
 
 class GenerateSamplePointsFromTruthPoly(object):
     
-    # define a helper function
-    def getDomainCodes(self, fc):
+    landTypes = ['Barren Land', 'Cropland', 'Trees', 'Grassland', 'BUA', 'Water', 'Other', 'ALL']
+    
+    # return dictionary of coded values and domain descriptions
+    def getDomains(self, fc):
         
         # get the domain and listing
         input_file_GDB = os.path.dirname(fc)
         domains = arcpy.da.ListDomains(input_file_GDB)
         pairs = []
-        vals = []
+        descriptions = []
         for domain in domains:
             # print('Domain name: {0}'.format(domain.name))
-            # if domain.domainType == 'CodedValue':
-            coded_values = domain.codedValues
-            if platform == "DESKTOP": # we are using ArcGIS Desktop
-                for val, desc in coded_values.iteritems(): #uncomment for py 2.7
-                    pairs.append((val, desc))
-                    vals.append(val)
-            else: # we are using ArcGIS Pro
-                for val, desc in coded_values.items():
-                    pairs.append((val, desc))
-                    vals.append(val)
+            if domain.domainType == 'CodedValue':
+                coded_values = domain.codedValues
+                return coded_values
+            
+            #if platform == "DESKTOP": # we are using ArcGIS Desktop
+                #for val, desc in coded_values.iteritems():
+                    #pairs.append((val, desc))
+                    #descriptions.append(desc)
+            #else: # we are using ArcGIS Pro
+                #for val, desc in coded_values.items():
+                    #pairs.append((val, desc))
+                    #descriptions.append(desc)
 
-        vals.sort()
+        #descriptions.sort()
         
-        return vals # return the list sorted ascending
+        # return the list sorted ascending
+        #return descriptions
         
         
     
@@ -60,54 +65,58 @@ class GenerateSamplePointsFromTruthPoly(object):
 
     def getParameterInfo(self):
         """Define parameter definitions"""
-        param0 = arcpy.Parameter(
+        inputpolygonsparam = arcpy.Parameter(
             displayName ='Input Truth Data Polygons',
             name ='in_truth_poly',
             datatype ="GPFeatureLayer",
             parameterType ='Required',
             direction ='Input')
 
-        param1 = arcpy.Parameter(
-            displayName ='Change Description Codes',
-            name ='in_change_codes',
-            datatype ="GPString",
-            parameterType ='Required',
-            direction ='Input')
+        # param1 = arcpy.Parameter(displayName ='Change Description Codes', name ='in_change_codes', datatype ="GPString", parameterType ='Required', direction ='Input')
             
-        param1.multiValue=True
+        # param1.multiValue=True
         
-        param2 = arcpy.Parameter(
+        landtypesparam = arcpy.Parameter(displayName = 'Land Type Changes', name = 'landtypechanges', datatype = "GPValueTable", multiValue = True, parameterType = 'Required', direction = 'Input')
+        landtypesparam.columns = [['GPString', 'Before'], ['GPString', 'After']]
+        
+        # param1 = arcpy.Parameter(displayName = 'Before Land Types', name = 'beforeDescription', datatype = "GPString", multiValue = True, parameterType = 'Required', direction = 'Input')
+        
+        # param2 = arcpy.Parameter(displayName = 'After Land Types', name = 'afterDescription', datatype = "GPString", multiValue = True, parameterType = 'Required', direction = 'Input')
+        
+        descriptorparam = arcpy.Parameter(
             displayName ='Descriptor',
             name ='in_descriptor',
             datatype ="GPString",
             parameterType ='Required',
             direction ='Input')
             
-        param3 = arcpy.Parameter(
+        samplepointsparam = arcpy.Parameter(
             displayName ='Number of Sample Points',
             name ='in_numpts',
             datatype ="GPLong",
             parameterType ='Required',
             direction ='Input')
             
-        param4 = arcpy.Parameter(
+        samplingtypeparam = arcpy.Parameter(
             displayName ='Sampling Type',
             name ='in_sampl_type',
             datatype ="GPString",
             parameterType ='Required',
             direction ='Input')
             
-        param4.filter.list = ['STRATIFIED_RANDOM', 'RANDOM', 'EQUALIZED_STRATIFIED_RANDOM']
+        samplingtypeparam.filter.list = ['STRATIFIED_RANDOM', 'RANDOM', 'EQUALIZED_STRATIFIED_RANDOM']
             
             
-        param5 = arcpy.Parameter(
+        outgeoparam = arcpy.Parameter(
             displayName = 'Output Geodatabase',
             name = 'out_gdb',
             datatype = "DEWorkspace",
             parameterType = 'Required',
             direction = 'Input')
+            
+        # param7 = arcpy.Parameter(displayName = "Domain Codes", name = "domainCode", datatype = "GPString", multiValue = True, parameterType = "Derived", direction = "Output")
         
-        params = [param0, param1, param2, param3, param4, param5]
+        params = [inputpolygonsparam, landtypesparam, descriptorparam, samplepointsparam, samplingtypeparam, outgeoparam]
         return params
 
     def isLicensed(self):
@@ -119,14 +128,16 @@ class GenerateSamplePointsFromTruthPoly(object):
         validation is performed.  This method is called whenever a parameter
         has been changed."""
         
-        # param2 = parameters[2]
+        parameters[1].filters[0].list = self.landTypes
+        parameters[1].filters[1].list = self.landTypes
         
-        # get the domain codes
-        if parameters[0].valueAsText:
+        # if parameters[1].altered:
+            # parameters[2].filter.list.remove(parameters[1].valueAsText)
+            # parameters[2].filter.list.append("ALL")
             # if not parameters[1].altered:
-            list = self.getDomainCodes(parameters[0].valueAsText)
+            # list = self.getDomainCodes(parameters[0].valueAsText)
             # parameters[1].values = list
-            parameters[1].filter.list = list
+            
         
         return 
 
@@ -139,8 +150,8 @@ class GenerateSamplePointsFromTruthPoly(object):
         """The source code of the tool."""
         
         in_fc =             parameters[0].valueAsText
-        change_codes =      parameters[1].values # ; separated string as list of strings
-        tag =               parameters[2].valueAsText
+        landtypes =         parameters[1].values
+        descriptor =        parameters[2].valueAsText
         numpts =            parameters[3].value
         samp_type =         parameters[4].valueAsText        
         out_gdb =           parameters[5].valueAsText
@@ -148,14 +159,49 @@ class GenerateSamplePointsFromTruthPoly(object):
         
         # check for output GDB
         if not os.path.exists(out_gdb):
-            arcpy.AddError("Output workspace does not exist")
+            arcpy.AddError("Output workspace does not exist.")
             return
             
         DEBUG = False
         
+        arcpy.AddMessage("Land types: {0}".format(landtypes))
+        
+        domains = self.getDomains(in_fc)
+        
+        # TODO: convert Before and Afters into list of integer change codes (cc)
+        domain_descriptions = []
+        for ltype in landtypes:
+            if ltype[0] == ltype[1]:
+                arcpy.AddError("Error- Before and After Land Types must not match.")
+                return
+            elif ltype[0] != 'ALL' and ltype[1] != 'ALL':
+                changeDescription = ("{0} to {1}".format(ltype[0], ltype[1]))
+                domain_descriptions.append(changeDescription)
+            else:
+                # 'ALL' is one of the choices: add all other combos with the other land type to domain_descriptions list
+                if ltype[0] == 'ALL':
+                    for land in self.landTypes:
+                        if land != ltype[1] and land != 'ALL':
+                            changeDescBefore = ("{0} to {1}".format(land, ltype[1]))
+                            domain_descriptions.append(changeDescBefore)
+                elif ltype[1] == 'ALL':
+                    for ld in self.landTypes:
+                        if ld != ltype[0] and ld != 'ALL':
+                            changeDescAfter = ("{0} to {1}".format(ltype[0], ld))
+                            domain_descriptions.append(changeDescAfter)
+                            
+        arcpy.AddMessage("List of descriptions: {0}.".format(domain_descriptions))
+        
+        cc = []
+        for domainDescription in domain_descriptions:
+            for code, desc in domains.items():
+                if desc == domainDescription:
+                    cc.append(code)
+
+        arcpy.AddMessage("List of change codes: {0}.".format(cc))
         
         # parse the list and convert to int
-        cc = [ int(a) for a in change_codes if len(a) > 0 ]
+        # cc = [ int(a) for a in change_codes if len(a) > 0 ]
         
         # check that at least one element is the number 0
         # check that at least one element has been chosen
@@ -210,7 +256,7 @@ class GenerateSamplePointsFromTruthPoly(object):
             
         ## merge the feature classes
         arcpy.AddMessage(pts)
-        pt_name = "AA_pts_{}_{}_{}".format(tag, numpts, samp_type)
+        pt_name = "AA_pts_{}_{}_{}".format(descriptor, numpts, samp_type)
         outfc = os.path.join(out_gdb, pt_name)
         arcpy.Merge_management(pts, outfc)
             
