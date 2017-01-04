@@ -20,7 +20,7 @@ class Toolbox(object):
         self.alias = "dbsCD"
 
         # List of tool classes associated with this toolbox
-        self.tools = [GenerateSamplePointsFromTruthPoly, ExtractMVfromMD, ReplaceZeroValues, CallMGETModel]
+        self.tools = [GenerateSamplePointsFromTruthPoly, ExtractMVfromMD, ReplaceZeroValues, CallMGETModel, ChangeDetection]
 
 
 class GenerateSamplePointsFromTruthPoly(object):
@@ -168,7 +168,6 @@ class GenerateSamplePointsFromTruthPoly(object):
         
         domains = self.getDomains(in_fc)
         
-        # TODO: convert Before and Afters into list of integer change codes (cc)
         domain_descriptions = []
         for ltype in landtypes:
             if ltype[0] == ltype[1]:
@@ -657,4 +656,94 @@ class CallMGETModel(object):
             arcpy.AddError(pymsg + "\n")
             return
         
-        return    
+        return
+
+class ChangeDetection(object):
+
+    def __init__(self):
+        """Define the tool (tool name is the name of the class)."""
+        self.label = "Change Detection Tool"
+        self.description = ""
+        self.canRunInBackground = False
+        
+    def getParameterInfo(self):
+        """Define parameter definitions"""
+        
+        landTypes = ['Barren Land', 'Cropland', 'Trees', 'Grassland', 'BUA', 'Water', 'Other', 'ALL']
+        
+        inputpolygonsparam = arcpy.Parameter(displayName ='Input Truth Data Polygons', name ='in_truth_poly', datatype ="GPFeatureLayer", parameterType ='Required', direction ='Input')
+        
+        landtypesparam = arcpy.Parameter(displayName = 'Land Type Changes', name = 'landtypechanges', datatype = "GPValueTable", multiValue = True, parameterType = 'Required', direction = 'Input')
+        landtypesparam.columns = [['GPString', 'Before'], ['GPString', 'After']]
+        landtypesparam.filters[0].list = landTypes
+        landtypesparam.filters[1].list = landTypes
+        
+        descriptorparam = arcpy.Parameter(
+            displayName ='Descriptor',
+            name ='in_descriptor',
+            datatype ="GPString",
+            parameterType ='Required',
+            direction ='Input')
+            
+        samplepointsparam = arcpy.Parameter(
+            displayName ='Number of Sample Points',
+            name ='in_numpts',
+            datatype ="GPLong",
+            parameterType ='Required',
+            direction ='Input')
+            
+        samplingtypeparam = arcpy.Parameter(
+            displayName ='Sampling Type',
+            name ='in_sampl_type',
+            datatype ="GPString",
+            parameterType ='Required',
+            direction ='Input')
+            
+        samplingtypeparam.filter.list = ['STRATIFIED_RANDOM', 'RANDOM', 'EQUALIZED_STRATIFIED_RANDOM']
+        
+        changevariablemosaicgdbparam = arcpy.Parameter(
+            displayName ='Change Variable Mosaic GDB',
+            name ='in_ch_gdb',
+            datatype ="DEType",
+            parameterType ='Required',
+            direction ='Input')
+            
+        outgeoparam = arcpy.Parameter(
+            displayName = 'Output Geodatabase',
+            name = 'out_gdb',
+            datatype = "DEWorkspace",
+            parameterType = 'Required',
+            direction = 'Input')
+        
+        replacetypeparam = arcpy.Parameter(
+            displayName ='Replacement Method',
+            name ='in_rep_method',
+            datatype ="GPString",
+            parameterType ='Required',
+            direction ='Input')
+        replacetypeparam.filter.list = ['mean', 'median']
+        replacetypeparam.value = 'mean'
+        
+        params = [inputpolygonsparam, landtypesparam, descriptorparam, samplepointsparam, samplingtypeparam, changevariablemosaicgdbparam, replacetypeparam, outgeoparam]
+        return params
+
+    def isLicensed(self):
+        """Set whether tool is licensed to execute."""
+        return True
+
+    def updateParameters(self, parameters):
+        """Modify the values and properties of parameters before internal
+        validation is performed.  This method is called whenever a parameter
+        has been changed."""
+        return
+
+    def updateMessages(self, parameters):
+        """Modify the messages created by internal validation for each tool
+        parameter.  This method is called after internal validation."""
+        return
+
+    def execute(self, parameters, messages):
+        """The source code of the tool."""
+        return
+
+        
