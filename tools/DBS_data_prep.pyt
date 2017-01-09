@@ -665,6 +665,20 @@ class ChangeDetection(object):
         self.label = "Change Detection Tool"
         self.description = ""
         self.canRunInBackground = False
+    
+    # return dictionary of coded values and domain descriptions
+    def getDomains(self, fc):
+        
+        # get the domain and listing
+        input_file_GDB = os.path.dirname(fc)
+        domains = arcpy.da.ListDomains(input_file_GDB)
+        pairs = []
+        descriptions = []
+        for domain in domains:
+            if domain.domainType == 'CodedValue':
+                coded_values = domain.codedValues
+                return coded_values
+                
         
     def getParameterInfo(self):
         """Define parameter definitions"""
@@ -744,6 +758,181 @@ class ChangeDetection(object):
 
     def execute(self, parameters, messages):
         """The source code of the tool."""
-        return
+        
+        # GenerateSamplePointsFromTruthPoly.execute(parameters, messages)
+        in_fc =             parameters[0].valueAsText
+        landtypes =         parameters[1].values
+        descriptor =        parameters[2].valueAsText
+        numpts =            parameters[3].value
+        samp_type =         parameters[4].valueAsText
+        change_mosaic_gdb = parameters[5].valueAsText
+        replace_type =      parameters[6].valueAsText
+        out_gdb =           parameters[7].valueAsText
+        
+        # check for output GDB
+        if not os.path.exists(out_gdb):
+            arcpy.AddError("Output workspace does not exist.")
+            return
+            
+        DEBUG = False
+        
+        arcpy.AddMessage("Land types: {0}".format(landtypes))
+        
+        domains = self.getDomains(in_fc)
+        
+        domain_descriptions = []
+        for ltype in landtypes:
+            if ltype[0] == ltype[1]:
+                arcpy.AddError("Error- Before and After Land Types must not match.")
+                return
+            elif ltype[0] != 'ALL' and ltype[1] != 'ALL':
+                changeDescription = ("{0} to {1}".format(ltype[0], ltype[1]))
+                domain_descriptions.append(changeDescription)
+            else:
+                # 'ALL' is one of the choices: add all other combos with the other land type to domain_descriptions list
+                if ltype[0] == 'ALL':
+                    for land in self.landTypes:
+                        if land != ltype[1] and land != 'ALL':
+                            changeDescBefore = ("{0} to {1}".format(land, ltype[1]))
+                            domain_descriptions.append(changeDescBefore)
+                elif ltype[1] == 'ALL':
+                    for ld in self.landTypes:
+                        if ld != ltype[0] and ld != 'ALL':
+                            changeDescAfter = ("{0} to {1}".format(ltype[0], ld))
+                            domain_descriptions.append(changeDescAfter)
+                            
+        arcpy.AddMessage("List of descriptions: {0}.".format(domain_descriptions))
+        
+        cc = []
+        for domainDescription in domain_descriptions:
+            for code, desc in domains.items():
+                if desc == domainDescription:
+                    cc.append(code)
+
+        arcpy.AddMessage("List of change codes: {0}.".format(cc))
+        
+        # check that at least one element is the number 0
+        # check that at least one element has been chosen
+        if len(cc) < 1:
+            arcpy.AddError("Please choose at least one change code. Ideally, you would choose the zero-class and one other to compare non-change with another change type.")
+            return
+        
+        ## iterate through the change types
+        pts = []
+        for j, val in enumerate(cc):
+            
+            ## Make a feature layer
+            diss_lyr = 'diss_lyr_{}'.format(j)
+            wc = "changeDesc = {}".format(val) # TODO: edit
+            arcpy.MakeFeatureLayer_management(in_fc, diss_lyr, wc) # TODO:edit
+            
+            # check if features count is > 0
+
+            
+            ## dissolve the feature layer
+            diss_fc = 'in_memory/dissol{}'.format(j)
+            arcpy.Dissolve_management(diss_lyr, diss_fc)
+            
+            arcpy.Delete_management(diss_lyr)
+            
+            ## add fields and calculate
+            fields = ["Classname", "Classvalue", "RED", "GREEN", "BLUE"]
+            types = ["TEXT", "LONG", "LONG", "LONG", "LONG"]
+            vals = ['"placeholder"', 1, 1, 1, 1]
+            for i in range(5):
+                arcpy.AddField_management(diss_fc, fields[i], types[i])
+                arcpy.CalculateField_management(diss_fc, fields[i], vals[i], "PYTHON_9.3")
+                
+            ## debug, write out fc
+            if DEBUG:
+                arcpy.CopyFeatures_management(diss_fc, r"C:\Users\jose6641\Documents\arcGIS\Default.gdb\deleteme") 
+                
+            ## generate sample points
+            # numpts = 10000
+            temp_pts = "in_memory/pts{}".format(j)
+            arcpy.gp.CreateAccuracyAssessmentPoints_sa(diss_fc, temp_pts, "GROUND_TRUTH", "{}".format(numpts), samp_type)
+            
+            ## add field for change type
+            arcpy.AddField_management(temp_pts, "changeDesc2", "LONG")
+            arcpy.CalculateField_management(temp_pts, "changeDesc2", val, "PYTHON_9.3")
+            
+            ## add to list
+            pts.append(temp_pts)
+            
+        ## merge the feature classes
+        arcpy.AddMessage(pts)
+        pt_name = "AA_pts_{}_{}_{}".format(descriptor, numpts, samp_type)
+        outfc = os.path.join(out_gdb, pt_name)
+        # arcpy.AddMessage("Output feature class(After Tool 01.): {0}".format(outfc))
+        arcpy.Merge_management(pts, outfc)
+        
+        arcpy.env.workspace = change_mosaic_gdb
+            
+        # get the mosaic datasets for a specific variable type
+        mds	= arcpy.ListDatasets("*_mosaic")
+
+        # construct the field names	
+        field_names = [a.split('_mosaic')[0] for a in mds]
+
+        # construct the input parameters for Extract Multi Values to Points
+        field_mappings = [[os.path.join(change_mosaic_gdb, mds[i]), nm] for i,nm in enumerate(field_names)]
+        
+        # extract the values
+        # arcpy.CopyFeatures_management(fc, out_fc)
+        arcpy.sa.ExtractMultiValuesToPoints(outfc, field_mappings, 'BILINEAR')	
+        
+        
+        ############################## Tool 03.
+        
+        # do the replacement
+        sr = arcpy.Describe(outfc).spatialReference
+        fc_copy = "{}_{}".format("in_memory/", replace_type)
+        arcpy.CopyFeatures_management(outfc, fc_copy)
+        flds = arcpy.ListFields(outfc)
+        field_names = [f.name for f in flds]
+        f_arr = arcpy.da.FeatureClassToNumPyArray(fc_copy, ['SHAPE@XY'] + field_names)
+
+        if replace_type.lower() == 'mean':
+            for i,field in enumerate(field_names):
+                if flds[i].type.upper() == "DOUBLE":
+                    arcpy.AddMessage('processing field: {}'.format(field))
+                    arr = f_arr[field].copy()
+                    mean_rep = np.nanmean(arr[arr!=0])                 
+                    f_arr[field][f_arr[field] == 0] = mean_rep
+                    f_arr[field][np.isnan(f_arr[field])] = mean_rep
+
+                    num_nan_rep = len(arr[np.isnan(arr)]) - len(f_arr[field][np.isnan(f_arr[field])])
+                    num_zero_rep = len(arr[arr==0]) - len(f_arr[field][f_arr[field] == 0])
+                    
+                    arcpy.AddMessage("replaced {} zero values".format(num_zero_rep))
+                    arcpy.AddMessage("replaced {} NaN values".format(num_nan_rep))
+
+        if replace_type.lower() == 'median':
+            for i,field in enumerate(field_names):
+                if flds[i].type.upper() == "DOUBLE":
+                    arcpy.AddMessage('processing field: {}'.format(field))
+                    
+                    arr = f_arr[field].copy()
+                    median_rep = np.nanmedian(arr[arr!=0])
+                    f_arr[field][f_arr[field] == 0] = median_rep
+                    f_arr[field][np.isnan(f_arr[field])] = median_rep
+                    
+                    num_nan_rep = len(arr[np.isnan(arr)]) - len(f_arr[field][np.isnan(f_arr[field])])
+                    num_zero_rep = len(arr[arr==0]) - len(f_arr[field][f_arr[field] == 0])
+                    
+                    arcpy.AddMessage("replaced {} zero values".format(num_zero_rep))
+                    arcpy.AddMessage("replaced {} NaN values".format(num_nan_rep))
+
+        pt_fc_newname = pt_name + "_no0"
+        newoutfc = os.path.join(out_gdb, pt_fc_newname)
+        arcpy.AddMessage("Output feature class: {0}".format(newoutfc))
+        arcpy.da.NumPyArrayToFeatureClass(f_arr, newoutfc, ['SHAPE@XY'], sr)
+
+
+        # all data should now be prepped for any modeling algorithm. All data ranges are the same and there
+        # are no zero valued samples since they have been replaced by both the mean and median value of the 
+        # samples for each variable.
+        
+        return True
 
         
