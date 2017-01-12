@@ -219,9 +219,11 @@ class GenerateSamplePointsFromTruthPoly(object):
             arcpy.MakeFeatureLayer_management(in_fc, diss_lyr, wc) # TODO:edit
             
             # check if features count is > 0
-            
-            
-            
+            res = arcpy.GetCount_management(diss_lyr)
+            ct = int(res.getOutput(0))
+            if not (ct > 0):
+                arcpy.AddMessage("no features for value: {}".format(val))
+                continue            
             
             ## dissolve the feature layer
             diss_fc = 'in_memory/dissol{}'.format(j)
