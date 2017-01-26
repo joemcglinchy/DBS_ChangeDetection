@@ -310,7 +310,6 @@ class ExtractMVfromMD(object):
         """Modify the values and properties of parameters before internal
         validation is performed.  This method is called whenever a parameter
         has been changed."""
-        
         return 
 
     def updateMessages(self, parameters):
@@ -662,6 +661,8 @@ class CallMGETModel(object):
 
 class ChangeDetection(object):
 
+    landTypes = ['Barren Land', 'Cropland', 'Trees', 'Grassland', 'BUA', 'Water', 'Other', 'ALL']
+    
     def __init__(self):
         """Define the tool (tool name is the name of the class)."""
         self.label = "Change Detection Tool"
@@ -685,14 +686,12 @@ class ChangeDetection(object):
     def getParameterInfo(self):
         """Define parameter definitions"""
         
-        landTypes = ['Barren Land', 'Cropland', 'Trees', 'Grassland', 'BUA', 'Water', 'Other', 'ALL']
-        
         inputpolygonsparam = arcpy.Parameter(displayName ='Input Truth Data Polygons', name ='in_truth_poly', datatype ="GPFeatureLayer", parameterType ='Required', direction ='Input')
         
         landtypesparam = arcpy.Parameter(displayName = 'Land Type Changes', name = 'landtypechanges', datatype = "GPValueTable", multiValue = True, parameterType = 'Required', direction = 'Input')
         landtypesparam.columns = [['GPString', 'Before'], ['GPString', 'After']]
-        landtypesparam.filters[0].list = landTypes
-        landtypesparam.filters[1].list = landTypes
+        landtypesparam.filters[0].list = self.landTypes
+        landtypesparam.filters[1].list = self.landTypes
         
         descriptorparam = arcpy.Parameter(
             displayName ='Descriptor',
@@ -751,6 +750,26 @@ class ChangeDetection(object):
         """Modify the values and properties of parameters before internal
         validation is performed.  This method is called whenever a parameter
         has been changed."""
+        
+        if parameters[1].value:
+            chosenLandCombos = parameters[1].values
+            for landCombo in chosenLandCombos:
+                # remove a duplicate land type from either before or after filter list
+                if landCombo[1] and not landCombo[0]:
+                    # create a list slice (essentially copying the landTypes list)
+                    lands = self.landTypes[:]
+                    if lands.count(landCombo[1]) > 0:
+                        lands.remove(landCombo[1])
+                        parameters[1].filters[0].list = lands
+                elif landCombo[0] and not landCombo[1]:
+                    afterLands = self.landTypes[:]
+                    if afterLands.count(landCombo[0]) > 0:
+                        afterLands.remove(landCombo[0])
+                        parameters[1].filters[1].list = afterLands
+                else:
+                    parameters[1].filters[0].list = self.landTypes
+                    parameters[1].filters[1].list = self.landTypes
+    
         return
 
     def updateMessages(self, parameters):
@@ -761,15 +780,17 @@ class ChangeDetection(object):
     def execute(self, parameters, messages):
         """The source code of the tool."""
         
-        # GenerateSamplePointsFromTruthPoly.execute(parameters, messages)
         in_fc =             parameters[0].valueAsText
-        landtypes =         parameters[1].values
+        selected_landtypes =         parameters[1].values
         descriptor =        parameters[2].valueAsText
         numpts =            parameters[3].value
         samp_type =         parameters[4].valueAsText
         change_mosaic_gdb = parameters[5].valueAsText
         replace_type =      parameters[6].valueAsText
         out_gdb =           parameters[7].valueAsText
+        
+        
+        ################ Tool 01. Generate Sample Points From Truth Polygons
         
         # check for output GDB
         if not os.path.exists(out_gdb):
@@ -778,12 +799,21 @@ class ChangeDetection(object):
             
         DEBUG = False
         
-        arcpy.AddMessage("Land types: {0}".format(landtypes))
+        arcpy.AddMessage("Selected Land Types: {0}".format(selected_landtypes))
         
+        # for landCombo in selected_landtypes:
+            # before = str(landCombo[0])
+            # after = str(landCombo[1])
+            # arcpy.AddMessage("Before: {0}, After: {1}".format(before, after))
+            # if before:
+                # lands = self.landTypes
+                # lands.remove(before)
+                # parameters[1].filters[1].list = lands
+                    
         domains = self.getDomains(in_fc)
         
         domain_descriptions = []
-        for ltype in landtypes:
+        for ltype in selected_landtypes:
             if ltype[0] == ltype[1]:
                 arcpy.AddError("Error- Before and After Land Types must not match.")
                 return
@@ -803,7 +833,7 @@ class ChangeDetection(object):
                             changeDescAfter = ("{0} to {1}".format(ltype[0], ld))
                             domain_descriptions.append(changeDescAfter)
                             
-        arcpy.AddMessage("List of descriptions: {0}.".format(domain_descriptions))
+        # arcpy.AddMessage("List of descriptions: {0}.".format(domain_descriptions))
         
         cc = []
         for domainDescription in domain_descriptions:
@@ -811,7 +841,7 @@ class ChangeDetection(object):
                 if desc == domainDescription:
                     cc.append(code)
 
-        arcpy.AddMessage("List of change codes: {0}.".format(cc))
+        # arcpy.AddMessage("List of change codes: {0}.".format(cc))
         
         # check that at least one element is the number 0
         # check that at least one element has been chosen
@@ -868,6 +898,9 @@ class ChangeDetection(object):
         # arcpy.AddMessage("Output feature class(After Tool 01.): {0}".format(outfc))
         arcpy.Merge_management(pts, outfc)
         
+        
+        ############### Tool 02. Extract MultiValues
+        
         arcpy.env.workspace = change_mosaic_gdb
             
         # get the mosaic datasets for a specific variable type
@@ -884,7 +917,7 @@ class ChangeDetection(object):
         arcpy.sa.ExtractMultiValuesToPoints(outfc, field_mappings, 'BILINEAR')	
         
         
-        ############################## Tool 03.
+        ################ Tool 03. Replace Zero Values
         
         # do the replacement
         sr = arcpy.Describe(outfc).spatialReference
