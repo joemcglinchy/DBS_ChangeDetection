@@ -693,6 +693,8 @@ class ChangeDetection(object):
         landtypesparam.filters[0].list = self.landTypes
         landtypesparam.filters[1].list = self.landTypes
         
+        noiseparam = arcpy.Parameter(displayName = 'Add noise?', name = 'in_noise', datatype = "GPBoolean", parameterType = 'Optional', direction = 'Input')
+        
         descriptorparam = arcpy.Parameter(
             displayName ='Descriptor',
             name ='in_descriptor',
@@ -739,7 +741,7 @@ class ChangeDetection(object):
         replacetypeparam.filter.list = ['mean', 'median']
         replacetypeparam.value = 'mean'
         
-        params = [inputpolygonsparam, landtypesparam, descriptorparam, samplepointsparam, samplingtypeparam, changevariablemosaicgdbparam, replacetypeparam, outgeoparam]
+        params = [inputpolygonsparam, landtypesparam, noiseparam, descriptorparam, samplepointsparam, samplingtypeparam, changevariablemosaicgdbparam, replacetypeparam, outgeoparam]
         return params
 
     def isLicensed(self):
@@ -782,12 +784,13 @@ class ChangeDetection(object):
         
         in_fc =             parameters[0].valueAsText
         selected_landtypes =         parameters[1].values
-        descriptor =        parameters[2].valueAsText
-        numpts =            parameters[3].value
-        samp_type =         parameters[4].valueAsText
-        change_mosaic_gdb = parameters[5].valueAsText
-        replace_type =      parameters[6].valueAsText
-        out_gdb =           parameters[7].valueAsText
+        noise =             parameters[2].value
+        descriptor =        parameters[3].valueAsText
+        numpts =            parameters[4].value
+        samp_type =         parameters[5].valueAsText
+        change_mosaic_gdb = parameters[6].valueAsText
+        replace_type =      parameters[7].valueAsText
+        out_gdb =           parameters[8].valueAsText
         
         
         ################ Tool 01. Generate Sample Points From Truth Polygons
@@ -800,15 +803,7 @@ class ChangeDetection(object):
         DEBUG = False
         
         arcpy.AddMessage("Selected Land Types: {0}".format(selected_landtypes))
-        
-        # for landCombo in selected_landtypes:
-            # before = str(landCombo[0])
-            # after = str(landCombo[1])
-            # arcpy.AddMessage("Before: {0}, After: {1}".format(before, after))
-            # if before:
-                # lands = self.landTypes
-                # lands.remove(before)
-                # parameters[1].filters[1].list = lands
+        arcpy.AddMessage("Noise? {0}".format(noise))
                     
         domains = self.getDomains(in_fc)
         
@@ -840,8 +835,11 @@ class ChangeDetection(object):
             for code, desc in domains.items():
                 if desc == domainDescription:
                     cc.append(code)
-
-        # arcpy.AddMessage("List of change codes: {0}.".format(cc))
+        
+        if noise == True:
+            cc.append(0)
+        
+        arcpy.AddMessage("List of change codes: {0}.".format(cc))
         
         # check that at least one element is the number 0
         # check that at least one element has been chosen
@@ -859,7 +857,11 @@ class ChangeDetection(object):
             arcpy.MakeFeatureLayer_management(in_fc, diss_lyr, wc) # TODO:edit
             
             # check if features count is > 0
-
+            res = arcpy.GetCount_management(diss_lyr)
+            ct = int(res.getOutput(0))
+            if not (ct > 0):
+                arcpy.AddMessage("no features for value: {}".format(val))
+                continue
             
             ## dissolve the feature layer
             diss_fc = 'in_memory/dissol{}'.format(j)
