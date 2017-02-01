@@ -488,7 +488,7 @@ class ChangeDetection(object):
         # check for output GDB
         if not os.path.exists(out_gdb):
             arcpy.AddError("Output workspace does not exist.")
-            return
+            return -1
             
         DEBUG = False
         
@@ -535,11 +535,34 @@ class ChangeDetection(object):
         # check that at least one element has been chosen
         if len(cc) < 1:
             arcpy.AddError("Please choose at least one change code. Ideally, you would choose the zero-class and one other to compare non-change with another change type.")
-            return
+            return -1
+        
+        codesToRemove = []
+        for code in cc:
+            tempLayer = "temp_{}".format(code)
+            whereClause = "changeDesc = {}".format(code)
+            arcpy.MakeFeatureLayer_management(in_fc, tempLayer, whereClause)
+            count = int(arcpy.GetCount_management(tempLayer).getOutput(0))
+            if count == 0:
+                arcpy.AddMessage("No features for change code: {0}".format(code))
+                codesToRemove.append(code)
+            # arcpy.Delete_management(tempLayer)
+        
+        filteredccs = [x for x in cc if x not in codesToRemove]
+        arcpy.AddMessage("Filtered list of change codes: {}".format(filteredccs))
+        
+        ptspercc = numpts
+        numcodes = len(filteredccs)
+        if numcodes > 0:
+            ptspercc = int(numpts / numcodes)
+            arcpy.AddMessage("Number of points per change code: {0}".format(ptspercc))
+        else:
+            arcpy.AddError("No selected change codes have more than zero features.")
+            return -1
         
         ## iterate through the change types
         pts = []
-        for j, val in enumerate(cc):
+        for j, val in enumerate(filteredccs):
             
             ## Make a feature layer
             diss_lyr = 'diss_lyr_{}'.format(j)
@@ -547,11 +570,11 @@ class ChangeDetection(object):
             arcpy.MakeFeatureLayer_management(in_fc, diss_lyr, wc) # TODO:edit
             
             # check if features count is > 0
-            res = arcpy.GetCount_management(diss_lyr)
-            ct = int(res.getOutput(0))
-            if not (ct > 0):
-                arcpy.AddMessage("no features for value: {}".format(val))
-                continue
+            # res = arcpy.GetCount_management(diss_lyr)
+            # ct = int(res.getOutput(0))
+            # if not (ct > 0):
+                # arcpy.AddMessage("no features for value: {}".format(val))
+                # continue
             
             ## dissolve the feature layer
             diss_fc = 'in_memory/dissol{}'.format(j)
@@ -574,7 +597,7 @@ class ChangeDetection(object):
             ## generate sample points
             # numpts = 10000
             temp_pts = "in_memory/pts{}".format(j)
-            arcpy.gp.CreateAccuracyAssessmentPoints_sa(diss_fc, temp_pts, "GROUND_TRUTH", "{}".format(numpts), samp_type)
+            arcpy.gp.CreateAccuracyAssessmentPoints_sa(diss_fc, temp_pts, "GROUND_TRUTH", "{}".format(ptspercc), samp_type)
             
             ## add field for change type
             arcpy.AddField_management(temp_pts, "changeDesc2", "LONG")
@@ -758,6 +781,10 @@ class ChangeDetection(object):
         out_gdb = parameters[8].valueAsText
         
         outfc = self.generateSamplePoints(in_fc, selected_landtypes, noise, descriptor, numpts, samp_type, out_gdb)
+        if outfc == -1:
+            arcpy.AddError("Error generating sample points from truth polygons.")
+            return
+            
         multiFC = self.extractMultiValues(change_mosaic_geodatabase, outfc)  
         finalOutput = self.replaceZeroValues(multiFC, replace_type, out_gdb)
         return finalOutput
